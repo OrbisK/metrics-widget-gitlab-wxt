@@ -3,7 +3,9 @@ import {
   compareMetrics,
   formatDelta,
   formatRatio,
+  formatValue,
   mergeMetrics,
+  splitMetricName,
   parseMetrics,
   toNumber,
   toParsedReport,
@@ -228,5 +230,44 @@ describe('formatting', () => {
     expect(formatRatio(9.00485436893)).toBe('+900.5%');
     expect(formatRatio(-0.5)).toBe('-50%');
     expect(formatRatio(0.0001)).toBe('+<0.1%');
+  });
+});
+
+describe('splitMetricName', () => {
+  it('splits the family from its labels, unescaping values', () => {
+    expect(splitMetricName('nuxt_bundle_bytes{bundle="client",compression="gzip"}')).toEqual({
+      family: 'nuxt_bundle_bytes',
+      labels: [
+        ['bundle', 'client'],
+        ['compression', 'gzip'],
+      ],
+    });
+    expect(splitMetricName('x{path="/a b",q="say \\"hi\\""}').labels).toEqual([
+      ['path', '/a b'],
+      ['q', 'say "hi"'],
+    ]);
+  });
+
+  it('leaves a name without labels, or with a label set it cannot read, whole', () => {
+    expect(splitMetricName('test_count')).toEqual({ family: 'test_count', labels: [] });
+    expect(splitMetricName('x{a=1}')).toEqual({ family: 'x{a=1}', labels: [] });
+    expect(splitMetricName('x{}')).toEqual({ family: 'x', labels: [] });
+  });
+});
+
+describe('byte formatting', () => {
+  it('scales the values of byte families and leaves everything else as written', () => {
+    expect(formatValue('910599', 'nuxt_bundle_bytes')).toBe('910.6 kB');
+    expect(formatValue('3281742', 'nuxt_bundle_bytes')).toBe('3.282 MB');
+    expect(formatValue('512', 'size_bytes')).toBe('512 B');
+    expect(formatValue('1028317', 'size_bytes')).toBe('1.028 MB');
+    expect(formatValue('n/a', 'size_bytes')).toBe('n/a');
+    expect(formatValue('1.0', 'test_count')).toBe('1.0');
+    expect(formatValue('910599', 'megabytes_used')).toBe('910599');
+  });
+
+  it('scales byte deltas', () => {
+    expect(formatDelta(-12_345, true)).toBe('-12.35 kB');
+    expect(formatDelta(0, true)).toBe('±0');
   });
 });

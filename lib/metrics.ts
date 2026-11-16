@@ -221,10 +221,12 @@ export function compareMetrics(
   return result;
 }
 
-/** `+3`, `-0.25`, `±0`. */
-export function formatDelta(delta: number): string {
+/** `+3`, `-0.25`, `±0`; with `bytes`, `+12.3 kB`. */
+export function formatDelta(delta: number, bytes = false): string {
   if (delta === 0) return '±0';
-  const formatted = Math.abs(delta).toLocaleString('en-US', { maximumFractionDigits: 6 });
+  const formatted = bytes
+    ? formatBytes(Math.abs(delta))
+    : Math.abs(delta).toLocaleString('en-US', { maximumFractionDigits: 6 });
   return `${delta > 0 ? '+' : '-'}${formatted}`;
 }
 
@@ -235,4 +237,91 @@ export function formatRatio(ratio: number): string {
   const sign = ratio > 0 ? '+' : '-';
   if (percent < 0.1) return `${sign}<0.1%`;
   return `${sign}${percent.toLocaleString('en-US', { maximumFractionDigits: 1 })}%`;
+}
+
+export interface MetricName {
+  /** The name without its label set — `http_requests`. */
+  family: string;
+  /** The label pairs in the order written, values unescaped. */
+  labels: Array<[key: string, value: string]>;
+}
+
+const LABEL_ESCAPES: Record<string, string> = { n: '\n', '"': '"', '\\': '\\' };
+
+/**
+ * Splits `http_requests{method="get",code="200"}` into its family and labels,
+ * for display only — the full name stays the key. A label set that does not
+ * read cleanly is left in the family rather than half-parsed.
+ */
+export function splitMetricName(name: string): MetricName {
+  const brace = name.indexOf('{');
+  if (brace === -1 || !name.endsWith('}')) return { family: name, labels: [] };
+
+  const family = name.slice(0, brace);
+  const body = name.slice(brace + 1, -1);
+  const labels: MetricName['labels'] = [];
+  let i = 0;
+
+  while (i < body.length) {
+    while (body[i] === ',' || body[i] === ' ') i += 1;
+    if (i >= body.length) break;
+
+    const eq = body.indexOf('=', i);
+    if (eq === -1 || body[eq + 1] !== '"') return { family: name, labels: [] };
+    const key = body.slice(i, eq).trim();
+
+    let value = '';
+    let j = eq + 2;
+    for (; j < body.length && body[j] !== '"'; j += 1) {
+      if (body[j] === '\\' && j + 1 < body.length) {
+        j += 1;
+        value += LABEL_ESCAPES[body[j]] ?? `\\${body[j]}`;
+      } else {
+        value += body[j];
+      }
+    }
+    if (j >= body.length || !key) return { family: name, labels: [] };
+
+    labels.push([key, value]);
+    i = j + 1;
+  }
+
+  return { family, labels };
+}
+
+/**
+ * Whether a family's values are byte counts, by the Prometheus convention of
+ * naming the unit as the last word (`nuxt_bundle_bytes`).
+ */
+export function isBytes(family: string): boolean {
+  return /(^|_)bytes(_total)?$/.test(family);
+}
+
+const BYTE_UNITS = ['B', 'kB', 'MB', 'GB', 'TB'];
+
+/**
+ * `910599` → `910.6 kB`, in powers of 1000 like browser devtools. Four
+ * significant digits, so a change of a few percent still shows on a MB value.
+ */
+export function formatBytes(bytes: number): string {
+  let value = Math.abs(bytes);
+  let unit = 0;
+  while (value >= 1000 && unit < BYTE_UNITS.length - 1) {
+    value /= 1000;
+    unit += 1;
+  }
+  const formatted = value.toLocaleString('en-US', {
+    maximumSignificantDigits: Math.max(4, Math.ceil(Math.log10(value + 1))),
+  });
+  return `${bytes < 0 ? '-' : ''}${formatted} ${BYTE_UNITS[unit]}`;
+}
+
+/**
+ * A value for display. Values are shown as written, except byte counts, which
+ * read far better scaled; the caller keeps the written value at hand.
+ */
+export function formatValue(value: string, family: string): string {
+  if (!isBytes(family)) return value;
+  const number = toNumber(value);
+  return number === undefined ? value : formatBytes(number);
 }

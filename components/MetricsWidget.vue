@@ -1,6 +1,13 @@
 <script setup lang="ts">
 import { computed, reactive, ref } from 'vue';
-import { formatDelta, formatRatio } from '@/lib/metrics';
+import {
+  formatDelta,
+  formatRatio,
+  formatValue,
+  isBytes,
+  splitMetricName,
+  type MetricName,
+} from '@/lib/metrics';
 import { formatResumeTime } from '@/lib/rate-limit';
 import type { Settings } from '@/lib/storage';
 import {
@@ -178,14 +185,50 @@ function showMore(key: string): void {
   shown[key] = limit(key) + props.settings.metricsPerPage;
 }
 
-function deltaLabel(row: MetricChange): string | undefined {
-  if (row.delta === undefined) return undefined;
-  return row.ratio === undefined
-    ? formatDelta(row.delta)
-    : `${formatDelta(row.delta)} (${formatRatio(row.ratio)})`;
+type Row = MetricChange & MetricName;
+
+/**
+ * A run of rows from one metric family. A family listed under several label
+ * sets gets its name once, as a heading, and each row only its labels.
+ */
+interface RowGroup {
+  family: string;
+  /** Show the family as a heading over the rows rather than in each row. */
+  headed: boolean;
+  rows: Row[];
 }
 
-function deltaClass(row: MetricChange): string {
+function groupRows(rows: MetricChange[]): RowGroup[] {
+  const groups: RowGroup[] = [];
+  for (const row of rows) {
+    const split = splitMetricName(row.name);
+    const last = groups.at(-1);
+    if (split.labels.length > 0 && last?.family === split.family && last.rows[0].labels.length > 0) {
+      last.rows.push({ ...row, ...split });
+      last.headed = true;
+    } else {
+      groups.push({ family: split.family, headed: false, rows: [{ ...row, ...split }] });
+    }
+  }
+  return groups;
+}
+
+function display(value: string | undefined, row: Row): string {
+  return value === undefined ? '' : formatValue(value, row.family);
+}
+
+/** The value as written, when the display scaled it. */
+function written(value: string | undefined, row: Row): string | undefined {
+  return value !== undefined && display(value, row) !== value ? value : undefined;
+}
+
+function deltaLabel(row: Row): string | undefined {
+  if (row.delta === undefined) return undefined;
+  const delta = formatDelta(row.delta, isBytes(row.family));
+  return row.ratio === undefined ? delta : `${delta} (${formatRatio(row.ratio)})`;
+}
+
+function deltaClass(row: Row): string {
   if (!row.delta) return 'glmw-delta-flat';
   return row.delta > 0 ? 'glmw-delta-up' : 'glmw-delta-down';
 }
@@ -355,25 +398,46 @@ function onKeydown(event: KeyboardEvent): void {
               <th scope="col">Change</th>
             </tr>
           </thead>
-          <tbody>
+          <tbody
+            v-for="(group, index) in groupRows(section.rows.slice(0, limit(section.key)))"
+            :key="`${index}:${group.rows[0].name}`"
+            :class="{ 'glmw-group': group.headed }"
+          >
+            <tr v-if="group.headed" class="glmw-family-row">
+              <th scope="colgroup" colspan="3" class="glmw-family glmw-mono">{{ group.family }}</th>
+            </tr>
             <tr
-              v-for="row in section.rows.slice(0, limit(section.key))"
+              v-for="row in group.rows"
               :key="row.name"
               :class="`glmw-row-${row.status}`"
             >
-              <th scope="row" class="glmw-name glmw-mono" :title="`From job ${row.jobName}`">
-                {{ row.name }}
+              <th
+                scope="row"
+                class="glmw-name glmw-mono"
+                :title="`${row.name}\nFrom job ${row.jobName}`"
+              >
+                <span v-if="group.headed" class="glmw-sr-only">{{ group.family }}</span>
+                <span v-else class="glmw-family">{{ row.family }}</span>
+                <span v-if="row.labels.length" class="glmw-labels">
+                  <span v-for="[key, value] in row.labels" :key="key" class="glmw-label"
+                    ><span class="glmw-label-key">{{ key }}=</span>{{ value }}</span
+                  >
+                </span>
               </th>
               <td class="glmw-value glmw-mono">
                 <template v-if="row.status === 'changed'">
-                  <span class="glmw-previous">{{ row.previous }}</span>
+                  <span class="glmw-previous" :title="written(row.previous, row)">{{
+                    display(row.previous, row)
+                  }}</span>
                   <span class="glmw-arrow" aria-label="changed to"> → </span>
-                  <strong>{{ row.value }}</strong>
+                  <strong :title="written(row.value, row)">{{ display(row.value, row) }}</strong>
                 </template>
                 <template v-else-if="row.status === 'removed'">
-                  <del class="glmw-previous">{{ row.previous }}</del>
+                  <del class="glmw-previous" :title="written(row.previous, row)">{{
+                    display(row.previous, row)
+                  }}</del>
                 </template>
-                <template v-else>{{ row.value }}</template>
+                <span v-else :title="written(row.value, row)">{{ display(row.value, row) }}</span>
               </td>
               <td class="glmw-change">
                 <span v-if="row.status === 'changed' && deltaLabel(row)" :class="deltaClass(row)">

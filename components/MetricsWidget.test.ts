@@ -186,6 +186,25 @@ describe('MetricsWidget', () => {
     expect(html).toMatch(/<button[^>]*disabled[^>]*glmw-refresh|glmw-refresh[^>]*disabled/);
   });
 
+  it('names a labelled family once and lists each label set under it', async () => {
+    const html = await render([
+      report(
+        [
+          'nuxt_bundle_bytes{bundle="client",compression="brotli"} 910599',
+          'nuxt_bundle_bytes{bundle="server",compression="brotli"} 107016',
+          'requests{method="get"} 3',
+        ].join('\n'),
+      ),
+    ]);
+    const content = text(html);
+
+    expect(html.match(/glmw-family-row/g)).toHaveLength(1);
+    expect(content).toMatch(/nuxt_bundle_bytes .*bundle= client compression= brotli 910\.6 kB/);
+    expect(html).toContain('title="910599"');
+    // A family with one label set keeps its name on the row.
+    expect(content).toMatch(/requests method= get 3/);
+  });
+
   it('renders the loading and error states', async () => {
     expect(text(await renderState({ status: 'loading' }))).toContain('Loading the metrics report');
     expect(text(await renderState({ status: 'error', message: 'HTTP 403' }))).toContain('HTTP 403');

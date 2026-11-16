@@ -14,14 +14,15 @@ request page.
 
 ## Why
 
-`artifacts:reports:metrics` works on every tier: the job runs, writes its `metrics.txt`, and GitLab
-stores it as a report artifact. Showing it on the merge request is the separately priced part — the
-metrics widget is a Premium feature. On Free, the numbers your pipeline computed (bundle size, test
-count, coverage, memory usage, …) sit in an artifact nobody opens.
+Your pipeline already measures things about a change, such as bundle size, test count, coverage
+and memory usage. Declared as `artifacts:reports:metrics`, those numbers are stored with the job as
+a `metrics.txt` file. Seeing them while you review means opening the job and downloading the file,
+and comparing them with the target branch means doing that twice and diffing by hand.
 
-This extension reads that artifact with your existing session, reads the target branch's artifact
-the same way, and renders the difference above the merge widget. It adds no data and unlocks no
-reports: the artifact is served by the same route GitLab's own "Download" button uses.
+This extension does that step for you. With your existing session, it reads the merge request's
+metrics file and the target branch's, then shows the difference above the merge widget. It only
+reads files you can already download yourself, through the same route as the job page's "Download"
+button, and it changes nothing on GitLab.
 
 ## Install
 

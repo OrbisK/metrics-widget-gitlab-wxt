@@ -264,26 +264,76 @@
   font-size: 13px;
 }
 
-.glmw-table tr + tr :is(th, td) {
-  border-top: 1px solid var(--glmw-border);
-}
-
 .glmw-table :is(th, td) {
-  padding: 4px 8px 4px 0;
+  padding: 4px 12px 4px 0;
   border: 0;
   background: none;
   text-align: left;
   vertical-align: baseline;
 }
 
+/* A rule between groups and between ungrouped rows, none inside a group. */
+.glmw-table tbody + tbody > tr:first-child > *,
+.glmw-table tbody:not(.glmw-group) > tr + tr > * {
+  border-top: 1px solid var(--glmw-border);
+}
+
+.glmw-table tbody > tr:not(.glmw-family-row):hover > * {
+  background: var(--glmw-bg);
+}
+
+.glmw-family-row > th {
+  padding: 8px 0 2px;
+  font-weight: 600;
+}
+
+.glmw-group > tr:last-child > * {
+  padding-bottom: 8px;
+}
+
 .glmw-name {
-  width: 50%;
   font-weight: 400;
+}
+
+.glmw-family {
   overflow-wrap: anywhere;
 }
 
-.glmw-value {
+/* Inside a group the family is the heading; rows are just their labels. */
+.glmw-group .glmw-name {
+  padding-left: 12px;
+}
+
+.glmw-labels {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  vertical-align: baseline;
+}
+
+.glmw-family + .glmw-labels {
+  margin-left: 6px;
+}
+
+.glmw-label {
+  padding: 0 6px;
+  border: 1px solid var(--glmw-border);
+  border-radius: 4px;
+  background: var(--glmw-bg);
+  font-size: 12px;
+  line-height: 18px;
   white-space: nowrap;
+}
+
+.glmw-label-key {
+  color: var(--glmw-text-subtle);
+}
+
+.glmw-table .glmw-value {
+  width: 1%;
+  white-space: nowrap;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
 }
 
 .glmw-previous {
@@ -294,9 +344,10 @@
   color: var(--glmw-text-subtle);
 }
 
-.glmw-change {
+.glmw-table .glmw-change {
   width: 1%;
   padding-right: 0;
+  font-variant-numeric: tabular-nums;
   white-space: nowrap;
   text-align: right;
   font-size: 12px;
