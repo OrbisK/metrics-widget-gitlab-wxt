@@ -2,7 +2,7 @@
   "name": "metrics-widget-for-gitlab",
   "description": "Renders the metrics report a merge request pipeline already produces, compared with the target branch, on the merge request page",
   "private": true,
-  "version": "0.0.3",
+  "version": "0.0.4",
   "type": "module",
   "packageManager": "pnpm@10.34.1",
   "scripts": {
