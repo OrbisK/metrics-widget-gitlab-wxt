@@ -16,6 +16,14 @@ import type { MetricChange, MetricStatus } from './types';
  *   the value, so labels are matched without theirs: `method=get`.
  * - Values containing `*` or `?` are globs matched against the whole field;
  *   anything else is a substring.
+ * - `change:>2%` and `delta:>=1000` compare the relative change (in percent)
+ *   or the absolute delta with `>`, `>=`, `<`, `<=` or `=`. An unsigned number
+ *   compares the size of the change either way; a signed one (`>+2%`, `<-2%`)
+ *   compares the change itself. Rows without that number — new, removed and
+ *   non-numeric metrics, or a ratio from zero — are let through, so a threshold
+ *   hides noise without hiding them. Unlike other keys, repeated comparison
+ *   terms all have to hold (`change:>1% change:<50%` is a range); commas still
+ *   mean any of.
  * - `sort:field` orders the rows within each section, `-asc` or `-desc` on the
  *   field picks the direction. Several sort fields break ties in the order
  *   given. Rows without a value for the field (no number to compare) go last
@@ -64,6 +72,10 @@ const FIELDS = {
   job: 'job',
   is: 'is',
   status: 'is',
+  change: 'change',
+  percent: 'change',
+  delta: 'delta',
+  diff: 'delta',
   sort: 'sort',
 } as const;
 
@@ -101,7 +113,9 @@ const SUGGESTED_SORTS: readonly SortField[] = [
 
 export const QUERY_HELP =
   'Filter and sort metrics, e.g. is:changed bundle -job:lint sort:abs-change\n' +
-  'Keys: name, job, is:changed|new|removed|unchanged|uncompared, sort\n' +
+  'Keys: name, job, is:changed|new|removed|unchanged|uncompared, change, delta, sort\n' +
+  'change:>2% and delta:>1000 hide smaller changes (either way; >+2% or <-2% for one way); ' +
+  'new, removed and non-numeric metrics stay\n' +
   'sort: change (%), abs-change, delta, abs-delta, value, previous (old), name; add -asc or -desc\n' +
   'Prefix a term with - or its value with ! to exclude; commas mean "any of"; * and ? are wildcards.';
 
@@ -160,7 +174,7 @@ function isMatcher(raw: string): Matcher | string {
   return (row) => row.status === value;
 }
 
-function fieldMatcher(field: Exclude<Field, 'sort'>, value: string): Matcher | string {
+function fieldMatcher(field: 'name' | 'job' | 'is', value: string): Matcher | string {
   if (field === 'is') return isMatcher(value);
   if (field === 'job') {
     const match = textMatcher(value);
@@ -176,6 +190,47 @@ function fieldMatcher(field: Exclude<Field, 'sort'>, value: string): Matcher | s
 function nameMatcher(value: string): Matcher {
   const match = textMatcher(value);
   return (row) => match(row.name) || match(row.name.replaceAll('"', ''));
+}
+
+type NumericField = 'change' | 'delta';
+
+const COMPARISON = /^(>=|<=|>|<|=)([+-])?(\d+(?:\.\d*)?|\.\d+)(%)?$/;
+
+/**
+ * A comparison such as `>2%`, or null while only the operator is typed. The
+ * relative change is always written in percent; the `%` is optional.
+ */
+function parseComparison(
+  field: NumericField,
+  raw: string,
+): ((value: number) => boolean) | string | null {
+  if (/^(>=?|<=?|=)$/.test(raw)) return null;
+  const parts = COMPARISON.exec(raw);
+  if (!parts || (field === 'delta' && parts[4])) {
+    const example = field === 'change' ? '>2%' : '>1000';
+    return `cannot read "${field}:${raw}", expected a comparison such as ${field}:${example}`;
+  }
+  const [, operator, sign, digits] = parts;
+  const magnitude = Number(digits) / (field === 'change' ? 100 : 1);
+  const threshold = sign === '-' ? -magnitude : magnitude;
+  // Without a sign it is about the size of the change, either way.
+  const read = sign ? (value: number) => value : Math.abs;
+  switch (operator) {
+    case '>':
+      return (value) => read(value) > threshold;
+    case '>=':
+      return (value) => read(value) >= threshold;
+    case '<':
+      return (value) => read(value) < threshold;
+    case '<=':
+      return (value) => read(value) <= threshold;
+    default:
+      return (value) => read(value) === threshold;
+  }
+}
+
+function numericValue(row: MetricChange, field: NumericField): number | undefined {
+  return field === 'change' ? row.ratio : row.delta;
 }
 
 function parseSort(raw: string): SortKey | string {
@@ -277,6 +332,23 @@ export function compileQuery(input: string): CompiledQuery {
       continue;
     }
 
+    if (field === 'change' || field === 'delta') {
+      const comparisons: ((value: number) => boolean)[] = [];
+      for (const value of values) {
+        const parsed = parseComparison(field, value);
+        if (typeof parsed === 'string') errors.push({ term: text, message: parsed });
+        else if (parsed) comparisons.push(parsed);
+      }
+      if (!comparisons.length) continue;
+      // A row without the number is not judged, whichever way the term points.
+      required.push((row) => {
+        const value = numericValue(row, field);
+        if (value === undefined) return true;
+        return comparisons.some((compare) => compare(value)) !== negate;
+      });
+      continue;
+    }
+
     const matchers: Matcher[] = [];
     for (const value of values) {
       const matcher = fieldMatcher(field, value);
@@ -321,10 +393,11 @@ export interface Suggestions {
   items: Suggestion[];
 }
 
-const SUGGESTED_KEYS = ['name', 'job', 'is', 'sort'];
+const SUGGESTED_KEYS = ['name', 'job', 'is', 'change', 'delta', 'sort'];
 
 function suggestedValues(field: Field, partial: string): readonly string[] {
   if (field === 'is') return IS_VALUES;
+  if (field === 'change') return ['>1%', '>5%', '>10%'];
   if (field !== 'sort') return [];
   // The directions only once a field is typed out, or the list would be long.
   const directions = SUGGESTED_SORTS.filter(

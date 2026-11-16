@@ -90,11 +90,18 @@ A filter box narrows and sorts the list with a small query language, completed a
 | `name:`, `job:`                    | the same, against the metric name or the job that reported it              |
 | `is:changed,new`                   | the status: `changed`, `new`, `removed`, `unchanged`, `uncompared`         |
 | `-term`, `key:!value`              | excludes what the term matches                                             |
+| `change:>2%`                       | relative change of more than 2%, either way (`>=`, `<`, `<=`, `=` too)     |
+| `change:>+2%`, `change:<-2%`       | with a sign: grew by more than 2%, or dropped by more than 2%              |
+| `delta:>=1000`                     | the same for the absolute change, in the metric's own unit                 |
 | `sort:change`                      | relative change (%), biggest increase first                                |
 | `sort:abs-change`, `sort:abs-delta`| size of the change, either way, biggest first                              |
 | `sort:delta`                       | absolute change, biggest increase first                                    |
 | `sort:value`, `sort:previous`      | the new or the old value (`new`, `old` work too)                           |
 | `sort:name`                        | A to Z                                                                     |
+
+A `change:` or `delta:` threshold is meant for hiding noise, so it only judges rows that have that
+number: new, removed and non-numeric metrics, and changes from zero (no percentage), stay listed.
+Several thresholds all have to hold, so `change:>1% change:<50%` is a range.
 
 Add `-asc` or `-desc` to a sort to flip it (`sort:change-asc` lists the biggest drops first);
 several sorts break ties in order. Rows without a number to sort by go last. Each section is

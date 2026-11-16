@@ -90,6 +90,48 @@ describe('compileQuery', () => {
     expect(names('is:new,removed sort:change,name-desc')).toEqual(['lint_warnings', 'coverage']);
   });
 
+  it('hides changes below a threshold, either way, and keeps rows without the number', () => {
+    // get has a delta but no ratio (from zero); lint and coverage have neither.
+    expect(names('change:>15%')).toEqual([
+      'bundle_size_bytes',
+      'requests{method="get"}',
+      'lint_warnings',
+      'coverage',
+    ]);
+    expect(names('change:>=10')).toEqual(names('change:>9%'));
+    expect(names('is:changed change:>5%')).toEqual([
+      'bundle_size_bytes',
+      'test_count',
+      'requests{method="get"}',
+    ]);
+    expect(names('is:changed delta:>=10')).toEqual(['bundle_size_bytes', 'test_count']);
+    expect(names('is:changed delta:<10')).toEqual(['requests{method="get"}']);
+  });
+
+  it('compares the signed change when the number has a sign', () => {
+    expect(names('is:changed change:>+0%')).toEqual(['bundle_size_bytes', 'requests{method="get"}']);
+    expect(names('is:changed change:<-5%')).toEqual(['test_count', 'requests{method="get"}']);
+    expect(names('is:changed delta:>-1')).toEqual(['bundle_size_bytes', 'requests{method="get"}']);
+  });
+
+  it('requires every comparison term, any of a comma list, and negates them', () => {
+    expect(names('is:changed change:>5% change:<15%')).toEqual(['test_count', 'requests{method="get"}']);
+    expect(names('is:changed change:<5%,>15%')).toEqual(['bundle_size_bytes', 'requests{method="get"}']);
+    expect(names('is:changed -change:>15%')).toEqual(['test_count', 'requests{method="get"}']);
+    expect(names('is:changed change:!>15%')).toEqual(names('is:changed -change:>15%'));
+  });
+
+  it('reports comparisons it cannot read, but not a bare operator', () => {
+    expect(compileQuery('change:big delta:>5% change:2').errors.map((e) => e.term)).toEqual([
+      'change:big',
+      'delta:>5%',
+      'change:2',
+    ]);
+    const typing = compileQuery('change:> delta:>=');
+    expect(typing.errors).toEqual([]);
+    expect(typing.isEmpty).toBe(true);
+  });
+
   it('reports terms it cannot use and ignores them', () => {
     const compiled = compileQuery('colour:red is:old sort:size -sort:name bundle');
     expect(compiled.errors.map((e) => e.term)).toEqual([
@@ -130,6 +172,12 @@ describe('suggest', () => {
     expect(labels('sort:delta')).toEqual(['delta-asc', 'delta-desc']);
     expect(labels('sort:change-a')).toEqual(['change-asc']);
     expect(labels('sort:abs-change')).toEqual(['abs-change-asc', 'abs-change-desc']);
+  });
+
+  it('offers a few thresholds for the relative change', () => {
+    expect(labels('ch')).toEqual(['change:']);
+    expect(labels('change:')).toEqual(['>1%', '>5%', '>10%']);
+    expect(labels('change:>1')).toEqual(['>1%', '>10%']);
   });
 
   it('offers nothing for free-text keys or plain words', () => {

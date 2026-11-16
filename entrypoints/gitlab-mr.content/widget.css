@@ -225,8 +225,8 @@
 }
 
 .glmw-input {
+  box-sizing: border-box;
   width: 100%;
-  max-width: 360px;
   margin: 0;
   padding: 4px 8px;
   border: 1px solid var(--glmw-border);
