@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, reactive, ref, shallowRef, useId, useTemplateRef, watch } from 'vue';
 import {
+  changeIntensity,
   formatDelta,
   formatRatio,
   formatValue,
@@ -231,9 +232,10 @@ function deltaLabel(row: Row): string | undefined {
   return row.ratio === undefined ? delta : `${delta} (${formatRatio(row.ratio)})`;
 }
 
-function deltaClass(row: Row): string {
-  if (!row.delta) return 'glmw-delta-flat';
-  return row.delta > 0 ? 'glmw-delta-up' : 'glmw-delta-down';
+function deltaClass(row: Row): string[] {
+  const intensity = changeIntensity(row.delta, row.ratio);
+  if (!intensity) return ['glmw-delta-flat'];
+  return [row.delta! > 0 ? 'glmw-delta-up' : 'glmw-delta-down', `glmw-delta-${intensity}`];
 }
 
 const searchInput = useTemplateRef<HTMLInputElement>('searchInput');

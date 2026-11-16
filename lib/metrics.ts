@@ -230,6 +230,23 @@ export function formatDelta(delta: number, bytes = false): string {
   return `${delta > 0 ? '+' : '-'}${formatted}`;
 }
 
+/** Upper bounds of the relative change for intensity steps 1 to 3; above is 4. */
+const CHANGE_STEPS = [0.01, 0.05, 0.2];
+
+/**
+ * How strongly a change is tinted, from 1 (under 1%) to 4 (20% or more), or 0
+ * when nothing moved. Says nothing about whether the change is good. A change
+ * with no ratio (from zero) gets the faintest step: its direction is known,
+ * its size relative to anything is not.
+ */
+export function changeIntensity(delta: number | undefined, ratio: number | undefined): number {
+  if (!delta) return 0;
+  if (ratio === undefined) return 1;
+  const size = Math.abs(ratio);
+  const step = CHANGE_STEPS.findIndex((bound) => size < bound);
+  return step === -1 ? CHANGE_STEPS.length + 1 : step + 1;
+}
+
 /** `+12.5%`, `-0.3%`; below 0.1% in either direction is `<0.1%` with its sign. */
 export function formatRatio(ratio: number): string {
   if (ratio === 0) return '±0%';

@@ -68,7 +68,9 @@ lint_warnings       2               New
 
 - **Changed** — the value differs from the target branch's. Values are compared as written, the way
   GitLab's own widget does, so a non-numeric metric (`status passing`) still shows as changed, just
-  without a delta. Deltas are not coloured as good or bad: whether up is better depends on the metric.
+  without a delta. Increases are tinted blue and decreases orange, stronger the bigger the relative change (under 1%,
+  under 5%, under 20%, more). The colours say which way and how far, not good or bad: whether up is
+  better depends on the metric.
 - **New** / **Removed** — present on only one side.
 - **Unchanged** — counted in the header, and listed only with **Show unchanged metrics** turned on.
 - **Not compared** — the target branch's report from the same job could not be read (usually an

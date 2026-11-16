@@ -18,6 +18,9 @@
   --glmw-warning: var(--gl-feedback-warning-icon-color, #ab6100);
   --glmw-badge-bg: #e9f3fc;
   --glmw-badge-text: #0b5cad;
+  /* Direction only, never good or bad: neither hue is GitLab's success or danger. */
+  --glmw-up: #1f75cb;
+  --glmw-down: #c95d0b;
 
   box-sizing: border-box;
   margin: 0 0 12px;
@@ -67,6 +70,8 @@
   --glmw-warning: var(--gl-feedback-warning-icon-color, #e9be74);
   --glmw-badge-bg: #153a5f;
   --glmw-badge-text: #9dc7f1;
+  --glmw-up: #63a6e9;
+  --glmw-down: #e9a05e;
 }
 
 .glmw-tone-warning {
@@ -398,10 +403,43 @@
  * bundle size — so a change is not coloured as good or bad, only told apart from
  * no change at all.
  */
+/*
+ * Increases and decreases are tinted by how much they moved, relative to the
+ * old value. The sign in the label carries the direction for anyone who cannot
+ * tell the hues apart.
+ */
 .glmw-delta-up,
 .glmw-delta-down {
-  font-weight: 600;
+  padding: 0 6px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--glmw-tone) var(--glmw-strength), transparent);
   color: var(--glmw-text);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.glmw-delta-up {
+  --glmw-tone: var(--glmw-up);
+}
+
+.glmw-delta-down {
+  --glmw-tone: var(--glmw-down);
+}
+
+.glmw-delta-1 {
+  --glmw-strength: 12%;
+}
+
+.glmw-delta-2 {
+  --glmw-strength: 22%;
+}
+
+.glmw-delta-3 {
+  --glmw-strength: 32%;
+}
+
+.glmw-delta-4 {
+  --glmw-strength: 44%;
 }
 
 .glmw-delta-flat {

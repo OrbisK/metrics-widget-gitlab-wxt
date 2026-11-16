@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   compareMetrics,
   formatDelta,
+  changeIntensity,
   formatRatio,
   formatValue,
   mergeMetrics,
@@ -230,6 +231,22 @@ describe('formatting', () => {
     expect(formatRatio(9.00485436893)).toBe('+900.5%');
     expect(formatRatio(-0.5)).toBe('-50%');
     expect(formatRatio(0.0001)).toBe('+<0.1%');
+  });
+});
+
+describe('changeIntensity', () => {
+  it('steps by the size of the relative change, either way', () => {
+    expect(changeIntensity(0, 0)).toBe(0);
+    expect(changeIntensity(undefined, undefined)).toBe(0);
+    expect(changeIntensity(1, 0.005)).toBe(1);
+    expect(changeIntensity(-1, -0.01)).toBe(2);
+    expect(changeIntensity(1, 0.1)).toBe(3);
+    expect(changeIntensity(-1, -0.2)).toBe(4);
+    expect(changeIntensity(1, 9)).toBe(4);
+  });
+
+  it('gives a change from zero the faintest step', () => {
+    expect(changeIntensity(5, undefined)).toBe(1);
   });
 });
 
