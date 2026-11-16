@@ -82,8 +82,24 @@ Without a target branch to compare against — the comparison is off, or no fini
 target branch has a readable report — every metric is listed with its current value and the header
 says why.
 
-A filter box narrows the list by metric name. It is not stored and only filters the list: the
-header keeps describing every metric.
+A filter box narrows and sorts the list with a small query language, completed as you type:
+
+| Term                               | Meaning                                                                    |
+|------------------------------------|----------------------------------------------------------------------------|
+| `bundle`, `*_bytes`                | the metric name (labels included) contains the word, or matches the glob   |
+| `name:`, `job:`                    | the same, against the metric name or the job that reported it              |
+| `is:changed,new`                   | the status: `changed`, `new`, `removed`, `unchanged`, `uncompared`         |
+| `-term`, `key:!value`              | excludes what the term matches                                             |
+| `sort:change`                      | relative change (%), biggest increase first                                |
+| `sort:abs-change`, `sort:abs-delta`| size of the change, either way, biggest first                              |
+| `sort:delta`                       | absolute change, biggest increase first                                    |
+| `sort:value`, `sort:previous`      | the new or the old value (`new`, `old` work too)                           |
+| `sort:name`                        | A to Z                                                                     |
+
+Add `-asc` or `-desc` to a sort to flip it (`sort:change-asc` lists the biggest drops first);
+several sorts break ties in order. Rows without a number to sort by go last. Each section is
+filtered and sorted on its own. The query is not stored, and the header keeps describing every
+metric.
 
 ## How it finds the reports
 

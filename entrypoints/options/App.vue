@@ -256,7 +256,7 @@ async function remove(origin: string): Promise<void> {
 
       <label class="ui-field">
         <input v-model="current.showFilter" type="checkbox" />
-        <span>Show a filter box above the metrics</span>
+        <span>Show a filter and sort box above the metrics</span>
       </label>
 
       <label class="ui-field">

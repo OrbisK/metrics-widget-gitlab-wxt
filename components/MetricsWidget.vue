@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, reactive, ref } from 'vue';
+import { computed, reactive, ref, shallowRef, useId, useTemplateRef, watch } from 'vue';
 import {
   formatDelta,
   formatRatio,
@@ -8,6 +8,7 @@ import {
   splitMetricName,
   type MetricName,
 } from '@/lib/metrics';
+import { compileQuery, QUERY_HELP, suggest, type Suggestion } from '@/lib/query';
 import { formatResumeTime } from '@/lib/rate-limit';
 import type { Settings } from '@/lib/storage';
 import {
@@ -34,7 +35,9 @@ const emit = defineEmits<{
 }>();
 
 const collapsed = ref(props.settings.startCollapsed);
-const query = ref(props.initialQuery ?? '');
+/** Lives only as long as the page: a search is a question, not a preference. */
+const query = shallowRef(props.initialQuery ?? '');
+const compiledQuery = computed(() => compileQuery(query.value));
 /** How many rows each section shows, by section key, beyond the first page. */
 const shown = reactive<Record<string, number>>({});
 
@@ -159,19 +162,19 @@ const sections = computed<Section[]>(() => {
   return list.filter((section) => section.rows.length > 0);
 });
 
-const needle = computed(() => query.value.trim().toLowerCase());
-
-const filteredSections = computed(() =>
-  sections.value
+/** Each section filtered and sorted on its own, so the grouping by status stays. */
+const filteredSections = computed(() => {
+  const compiled = compiledQuery.value;
+  return sections.value
     .map((section) => ({
       ...section,
       total: section.rows.length,
-      rows: needle.value
-        ? section.rows.filter((row) => row.name.toLowerCase().includes(needle.value))
-        : section.rows,
+      rows: compiled.order(
+        compiled.isEmpty ? section.rows : section.rows.filter((row) => compiled.test(row)),
+      ),
     }))
-    .filter((section) => section.rows.length > 0),
-);
+    .filter((section) => section.rows.length > 0);
+});
 
 const hiddenUnchanged = computed(() =>
   comparison.value && !props.settings.showUnchanged ? comparison.value.unchanged.length : 0,
@@ -233,8 +236,61 @@ function deltaClass(row: Row): string {
   return row.delta > 0 ? 'glmw-delta-up' : 'glmw-delta-down';
 }
 
+const searchInput = useTemplateRef<HTMLInputElement>('searchInput');
+const suggestionsId = useId();
+/** Where the cursor is, which decides which term is being completed. */
+const cursor = shallowRef(0);
+/** Closed by Esc or blur, reopened by typing. */
+const suggesting = shallowRef(false);
+const activeSuggestion = shallowRef(0);
+
+const suggestions = computed(() =>
+  suggesting.value ? suggest(query.value, cursor.value) : { from: 0, items: [] },
+);
+
+watch(suggestions, () => {
+  activeSuggestion.value = 0;
+});
+
+function syncCursor(): void {
+  cursor.value = searchInput.value?.selectionStart ?? query.value.length;
+}
+
+function onSearchInput(): void {
+  syncCursor();
+  suggesting.value = true;
+}
+
+/**
+ * Edits the input in place, which also leaves the cursor after the insertion,
+ * and then takes the model from it — so Vue finds nothing to write back and
+ * the cursor stays put.
+ */
+function pickSuggestion(item: Suggestion): void {
+  const input = searchInput.value;
+  if (!input) return;
+  input.setRangeText(item.insert, suggestions.value.from, cursor.value, 'end');
+  query.value = input.value;
+  syncCursor();
+}
+
 function onKeydown(event: KeyboardEvent): void {
-  if (event.key === 'Escape') query.value = '';
+  const { items } = suggestions.value;
+  if (event.key === 'Escape') {
+    // First Esc closes the suggestions, the next one clears the search.
+    if (items.length) suggesting.value = false;
+    else query.value = '';
+    return;
+  }
+  if (!items.length) return;
+  if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+    event.preventDefault();
+    const step = event.key === 'ArrowDown' ? 1 : -1;
+    activeSuggestion.value = (activeSuggestion.value + step + items.length) % items.length;
+  } else if (event.key === 'Enter' || event.key === 'Tab') {
+    event.preventDefault();
+    pickSuggestion(items[activeSuggestion.value]);
+  }
 }
 </script>
 
@@ -371,15 +427,55 @@ function onKeydown(event: KeyboardEvent): void {
     <div v-if="result && !collapsed && sections.length + hiddenUnchanged > 0" class="glmw-body">
       <div v-if="settings.showFilter" class="glmw-filter">
         <input
+          ref="searchInput"
           v-model="query"
           class="glmw-input"
           type="search"
-          placeholder="Filter metrics by name"
-          aria-label="Filter metrics by name"
+          role="combobox"
+          placeholder="Filter or sort, e.g. is:changed sort:abs-change"
+          aria-label="Filter and sort metrics"
+          aria-autocomplete="list"
+          :aria-expanded="suggestions.items.length > 0"
+          :aria-controls="suggestionsId"
+          :aria-activedescendant="
+            suggestions.items.length ? `${suggestionsId}-${activeSuggestion}` : undefined
+          "
+          :title="QUERY_HELP"
           spellcheck="false"
           autocomplete="off"
+          @input="onSearchInput"
+          @click="syncCursor"
+          @keyup.left.right.home.end="syncCursor"
           @keydown="onKeydown"
+          @blur="suggesting = false"
         />
+        <!-- In the flow rather than floating: the widget clips overflow, and a
+             dropdown would be cut off when the list below it is short. -->
+        <ul
+          v-show="suggestions.items.length"
+          :id="suggestionsId"
+          class="glmw-suggestions"
+          role="listbox"
+          aria-label="Suggestions"
+        >
+          <li
+            v-for="(item, index) in suggestions.items"
+            :id="`${suggestionsId}-${index}`"
+            :key="item.label"
+            class="glmw-suggestion"
+            :class="{ 'glmw-suggestion-active': index === activeSuggestion }"
+            role="option"
+            :aria-selected="index === activeSuggestion"
+            @mousedown.prevent="pickSuggestion(item)"
+          >
+            {{ item.label }}
+          </li>
+          <li class="glmw-muted glmw-suggestions-hint" aria-hidden="true">Tab to complete</li>
+        </ul>
+
+        <p v-for="error in compiledQuery.errors" :key="error.term" class="glmw-sub glmw-danger-text">
+          Ignoring <span class="glmw-mono">{{ error.term }}</span>: {{ error.message }}
+        </p>
       </div>
 
       <div v-for="section in filteredSections" :key="section.key" class="glmw-section">
@@ -462,7 +558,7 @@ function onKeydown(event: KeyboardEvent): void {
         </button>
       </div>
 
-      <p v-if="needle && filteredSections.length === 0" class="glmw-empty glmw-muted">
+      <p v-if="!compiledQuery.isEmpty && filteredSections.length === 0" class="glmw-empty glmw-muted">
         No metric matches “{{ query.trim() }}”.
       </p>
 

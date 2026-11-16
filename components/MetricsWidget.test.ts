@@ -143,6 +143,22 @@ describe('MetricsWidget', () => {
     expect(content).not.toContain('test_count');
   });
 
+  it('sorts each section by what the query asks for', async () => {
+    const html = await render([report('a 110\nb 300\nc 50\nd 1')], {
+      base: [report('a 100\nb 100\nc 100', 'metrics', 6)],
+      query: 'sort:abs-change',
+    });
+    const content = text(html);
+
+    expect(content).toMatch(/b 100 → 300 .*c 100 → 50 .*a 100 → 110 .*New 1 .*d 1/);
+  });
+
+  it('says which terms of the query it ignored', async () => {
+    const html = await render([report('a 1')], { query: 'sort:size a' });
+
+    expect(text(html)).toMatch(/Ignoring sort:size ?: unknown sort &quot;size&quot;/);
+  });
+
   it('says when a running job’s removals have not been checked', async () => {
     const html = await render([report('a 1', 'test', 1)], {
       base: [report('a 1', 'test', 2), report('size 3', 'build', 3)],

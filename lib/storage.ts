@@ -26,7 +26,7 @@ export interface Settings {
   verboseLogging: boolean;
   /** How many metrics a section lists before "show more". */
   metricsPerPage: number;
-  /** Show a filter box above the metrics. What is typed into it is not stored. */
+  /** Show a filter and sort box above the metrics. What is typed into it is not stored. */
   showFilter: boolean;
   /**
    * How many base pipeline candidates the comparison tries before giving up.

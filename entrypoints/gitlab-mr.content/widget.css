@@ -235,6 +235,46 @@
   color: var(--glmw-text);
   font: inherit;
   font-size: 13px;
+  font-family: var(--gl-font-monospace, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
+}
+
+.glmw-input::placeholder {
+  color: var(--glmw-text-subtle);
+}
+
+.glmw-input:focus-visible {
+  outline: 2px solid var(--glmw-link);
+  outline-offset: 1px;
+}
+
+.glmw-suggestions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: 12px;
+}
+
+.glmw-suggestion {
+  padding: 0 6px;
+  border: 1px solid var(--glmw-border);
+  border-radius: 8px;
+  font-family: var(--gl-font-monospace, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
+  cursor: pointer;
+}
+
+.glmw-suggestion:hover,
+.glmw-suggestion-active {
+  border-color: var(--glmw-link);
+  color: var(--glmw-link);
+}
+
+.glmw-suggestions-hint {
+  margin-left: 4px;
+  font-size: 11px;
 }
 
 .glmw-section {
