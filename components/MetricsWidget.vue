@@ -1,0 +1,411 @@
+<script setup lang="ts">
+import { computed, reactive, ref } from 'vue';
+import { formatDelta, formatRatio } from '@/lib/metrics';
+import { formatResumeTime } from '@/lib/rate-limit';
+import type { Settings } from '@/lib/storage';
+import {
+  isRunning,
+  type Comparison,
+  type MetricChange,
+  type MetricStatus,
+  type WidgetState,
+} from '@/lib/types';
+
+const props = defineProps<{
+  state: WidgetState;
+  settings: Settings;
+  /** A refresh the user asked for is in flight. */
+  refreshing?: boolean;
+  /** GitLab answered 429; nothing is requested before this (epoch ms). */
+  rateLimitedUntil?: number | null;
+  /** Pre-fills the filter box. For tests; the box is never stored. */
+  initialQuery?: string;
+}>();
+
+const emit = defineEmits<{
+  refresh: [];
+}>();
+
+const collapsed = ref(props.settings.startCollapsed);
+const query = ref(props.initialQuery ?? '');
+/** How many rows each section shows, by section key, beyond the first page. */
+const shown = reactive<Record<string, number>>({});
+
+const result = computed(() => (props.state.status === 'ok' ? props.state.result : null));
+
+const comparison = computed<Comparison | null>(() => {
+  const value = result.value?.comparison;
+  return value?.status === 'ready' ? value.comparison : null;
+});
+
+const readableReports = computed(
+  () => result.value?.reports.filter((report) => !report.error) ?? [],
+);
+const unreadableReports = computed(
+  () => result.value?.reports.filter((report) => report.error) ?? [],
+);
+const allFailed = computed(
+  () => result.value !== null && readableReports.value.length === 0,
+);
+
+const running = computed(() => (result.value ? isRunning(result.value.progress) : false));
+
+const changeCount = computed(() => {
+  const value = comparison.value;
+  return value ? value.changed.length + value.added.length + value.removed.length : 0;
+});
+
+type Icon = 'spinner' | 'warning' | 'changed' | 'unchanged';
+
+const icon = computed<Icon>(() => {
+  if (props.state.status === 'loading') return 'spinner';
+  if (props.state.status === 'error' || allFailed.value) return 'warning';
+  if (comparison.value && changeCount.value === 0) return 'unchanged';
+  return 'changed';
+});
+
+function plural(count: number, one: string, many = `${one}s`): string {
+  return `${count} ${count === 1 ? one : many}`;
+}
+
+const summary = computed(() => {
+  const { state } = props;
+  if (state.status === 'loading') return 'Loading the metrics report…';
+  if (state.status === 'error') return 'Could not load the metrics report';
+  if (allFailed.value) return 'The metrics report could not be read';
+
+  const total = state.result.metrics.length;
+  if (total === 0) return 'The metrics report is empty';
+
+  const value = comparison.value;
+  if (!value) return `Metrics report: ${plural(total, 'metric')}`;
+  if (changeCount.value === 0) return 'Metrics report: no changes';
+
+  const parts = [
+    value.changed.length ? `${value.changed.length} changed` : '',
+    value.added.length ? `${value.added.length} new` : '',
+    value.removed.length ? `${value.removed.length} removed` : '',
+  ].filter(Boolean);
+  return `Metrics report: ${parts.join(', ')}`;
+});
+
+const rateLimitNotice = computed(() =>
+  props.rateLimitedUntil
+    ? `GitLab is rate limiting requests from this browser; checking again after ${formatResumeTime(props.rateLimitedUntil)}.`
+    : undefined,
+);
+
+const errorMessage = computed(() => {
+  if (props.state.status === 'error') return props.state.message;
+  if (!allFailed.value) return undefined;
+  const error = unreadableReports.value[0]?.error;
+  // The notice below already says it, with a time that stays current.
+  if (error?.kind === 'rate-limited' && rateLimitNotice.value) return undefined;
+  return error?.message;
+});
+
+const STRATEGY_LABELS: Record<Comparison['base']['strategy'], string> = {
+  'merge-base': 'merge base',
+  'target-branch': 'latest finished pipeline',
+};
+
+interface Section {
+  key: MetricStatus | 'all';
+  title: string;
+  rows: MetricChange[];
+}
+
+/**
+ * Without a comparison every metric is listed as it stands. With one, the
+ * metrics are grouped by what happened to them, the changes first.
+ */
+const sections = computed<Section[]>(() => {
+  const value = result.value;
+  if (!value) return [];
+
+  const ready = comparison.value;
+  if (!ready) {
+    return [
+      {
+        key: 'all',
+        title: 'Metrics',
+        rows: value.metrics.map((metric) => ({
+          name: metric.name,
+          status: 'uncompared',
+          value: metric.value,
+          jobName: metric.jobName,
+          jobWebUrl: metric.jobWebUrl,
+        })),
+      },
+    ];
+  }
+
+  const list: Section[] = [
+    { key: 'changed', title: 'Changed', rows: ready.changed },
+    { key: 'new', title: 'New', rows: ready.added },
+    { key: 'removed', title: 'Removed', rows: ready.removed },
+    { key: 'uncompared', title: 'Not compared', rows: ready.uncompared },
+  ];
+  if (props.settings.showUnchanged) {
+    list.push({ key: 'unchanged', title: 'Unchanged', rows: ready.unchanged });
+  }
+  return list.filter((section) => section.rows.length > 0);
+});
+
+const needle = computed(() => query.value.trim().toLowerCase());
+
+const filteredSections = computed(() =>
+  sections.value
+    .map((section) => ({
+      ...section,
+      total: section.rows.length,
+      rows: needle.value
+        ? section.rows.filter((row) => row.name.toLowerCase().includes(needle.value))
+        : section.rows,
+    }))
+    .filter((section) => section.rows.length > 0),
+);
+
+const hiddenUnchanged = computed(() =>
+  comparison.value && !props.settings.showUnchanged ? comparison.value.unchanged.length : 0,
+);
+
+function limit(key: string): number {
+  return shown[key] ?? props.settings.metricsPerPage;
+}
+
+function showMore(key: string): void {
+  shown[key] = limit(key) + props.settings.metricsPerPage;
+}
+
+function deltaLabel(row: MetricChange): string | undefined {
+  if (row.delta === undefined) return undefined;
+  return row.ratio === undefined
+    ? formatDelta(row.delta)
+    : `${formatDelta(row.delta)} (${formatRatio(row.ratio)})`;
+}
+
+function deltaClass(row: MetricChange): string {
+  if (!row.delta) return 'glmw-delta-flat';
+  return row.delta > 0 ? 'glmw-delta-up' : 'glmw-delta-down';
+}
+
+function onKeydown(event: KeyboardEvent): void {
+  if (event.key === 'Escape') query.value = '';
+}
+</script>
+
+<template>
+  <section
+    class="glmw"
+    :class="{ 'glmw-tone-warning': icon === 'warning' }"
+    aria-label="Metrics report"
+  >
+    <div class="glmw-head">
+      <span class="glmw-status" aria-hidden="true">
+        <svg v-if="icon === 'spinner'" class="glmw-spin" viewBox="0 0 16 16" width="16" height="16">
+          <circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-opacity="0.25" stroke-width="2" />
+          <path d="M8 2a6 6 0 0 1 6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+        </svg>
+        <svg v-else-if="icon === 'warning'" viewBox="0 0 16 16" width="16" height="16">
+          <path
+            fill="currentColor"
+            d="M8.9 1.5a1 1 0 0 0-1.8 0L.6 13.5A1 1 0 0 0 1.5 15h13a1 1 0 0 0 .9-1.5L8.9 1.5ZM8 5a.75.75 0 0 1 .75.75v3.5a.75.75 0 0 1-1.5 0v-3.5A.75.75 0 0 1 8 5Zm0 6a1 1 0 1 1 0 2 1 1 0 0 1 0-2Z"
+          />
+        </svg>
+        <svg v-else-if="icon === 'unchanged'" viewBox="0 0 16 16" width="16" height="16">
+          <path fill="currentColor" d="M2 6.25h12v1.5H2zm0 3h12v1.5H2z" />
+        </svg>
+        <svg v-else viewBox="0 0 16 16" width="16" height="16">
+          <path
+            fill="currentColor"
+            d="M1.75 1a.75.75 0 0 1 .75.75v11.75h11.75a.75.75 0 0 1 0 1.5H1.75a.75.75 0 0 1-.75-.75V1.75A.75.75 0 0 1 1.75 1Zm12.03 3.22a.75.75 0 0 1 0 1.06l-4 4a.75.75 0 0 1-1.06 0L6.5 7.06 4.53 9.03a.75.75 0 0 1-1.06-1.06l2.5-2.5a.75.75 0 0 1 1.06 0L9.25 7.69l3.47-3.47a.75.75 0 0 1 1.06 0Z"
+          />
+        </svg>
+      </span>
+
+      <div class="glmw-head-body">
+        <p class="glmw-summary">{{ summary }}</p>
+
+        <p v-if="errorMessage" class="glmw-sub glmw-danger-text">{{ errorMessage }}</p>
+
+        <p v-if="rateLimitNotice" class="glmw-sub glmw-warning-text" role="status">
+          {{ rateLimitNotice }}
+        </p>
+
+        <p v-if="result" class="glmw-sub">
+          <template v-if="result.pipelineWebUrl">
+            <a class="glmw-link" :href="result.pipelineWebUrl">Pipeline #{{ result.pipelineId }}</a>
+          </template>
+          <template v-else>Pipeline #{{ result.pipelineId }}</template>
+          <template v-if="running"> · still running, more metrics may follow</template>
+          <template v-if="unreadableReports.length > 0 && !allFailed">
+            · {{ plural(unreadableReports.length, 'report') }} could not be read
+          </template>
+        </p>
+
+        <p v-if="result && !allFailed" class="glmw-sub">
+          <template v-if="result.comparison.status === 'loading'">
+            Comparing with the target branch…
+          </template>
+          <template
+            v-else-if="result.comparison.status === 'unavailable' && result.comparison.retry && rateLimitNotice"
+          >
+            Not compared with the target branch yet — waiting for the rate limit to lift.
+          </template>
+          <template v-else-if="result.comparison.status === 'unavailable'">
+            Not compared with the target branch: {{ result.comparison.reason }}
+          </template>
+          <template v-else-if="comparison">
+            Compared with
+            <a
+              v-if="comparison.base.pipelineWebUrl"
+              class="glmw-link"
+              :href="comparison.base.pipelineWebUrl"
+              >pipeline #{{ comparison.base.pipelineId }}</a
+            ><template v-else>pipeline #{{ comparison.base.pipelineId }}</template>
+            on <span class="glmw-mono">{{ comparison.base.targetBranch }}</span>
+            ({{ STRATEGY_LABELS[comparison.base.strategy] }}<template v-if="comparison.base.sha"
+              >,
+              <a
+                v-if="comparison.base.commitWebUrl"
+                class="glmw-link glmw-mono"
+                :href="comparison.base.commitWebUrl"
+                >{{ comparison.base.sha.slice(0, 8) }}</a
+              ><span v-else class="glmw-mono">{{ comparison.base.sha.slice(0, 8) }}</span></template
+            >)
+            <template v-if="comparison.unchanged.length > 0">
+              · {{ comparison.unchanged.length }} unchanged
+            </template>
+            <template v-if="comparison.uncompared.length > 0">
+              · {{ comparison.uncompared.length }} not compared
+            </template>
+            <template v-if="comparison.pendingJobs.length > 0">
+              · removals not checked until {{ comparison.pendingJobs.join(', ') }} finishes
+            </template>
+            <template v-if="comparison.baseUnreadableCount > 0">
+              · {{ comparison.baseUnreadableCount }} of {{ comparison.baseReportCount }} target
+              branch reports could not be read
+            </template>
+          </template>
+        </p>
+      </div>
+
+      <div v-if="state.status !== 'loading'" class="glmw-actions">
+        <button
+          type="button"
+          class="glmw-toggle glmw-refresh"
+          :disabled="refreshing || Boolean(rateLimitNotice)"
+          :title="rateLimitNotice ?? (refreshing ? 'Refreshing…' : 'Refresh')"
+          :aria-label="refreshing ? 'Refreshing' : 'Refresh'"
+          @click="emit('refresh')"
+        >
+          <svg
+            :class="{ 'glmw-spin': refreshing }"
+            viewBox="0 0 16 16"
+            width="14"
+            height="14"
+            aria-hidden="true"
+          >
+            <path
+              fill="currentColor"
+              d="M8 2.5a5.5 5.5 0 1 0 5.38 6.64.75.75 0 1 1 1.47.31A7 7 0 1 1 12.95 3.05V1.75a.75.75 0 0 1 1.5 0v3.5a.75.75 0 0 1-.75.75h-3.5a.75.75 0 0 1 0-1.5h1.67A5.48 5.48 0 0 0 8 2.5Z"
+            />
+          </svg>
+        </button>
+        <button
+          v-if="result && result.metrics.length + (comparison?.removed.length ?? 0) > 0"
+          type="button"
+          class="glmw-toggle"
+          :aria-expanded="!collapsed"
+          @click="collapsed = !collapsed"
+        >
+          {{ collapsed ? 'Expand' : 'Collapse' }}
+        </button>
+      </div>
+    </div>
+
+    <div v-if="result && !collapsed && sections.length + hiddenUnchanged > 0" class="glmw-body">
+      <div v-if="settings.showFilter" class="glmw-filter">
+        <input
+          v-model="query"
+          class="glmw-input"
+          type="search"
+          placeholder="Filter metrics by name"
+          aria-label="Filter metrics by name"
+          spellcheck="false"
+          autocomplete="off"
+          @keydown="onKeydown"
+        />
+      </div>
+
+      <div v-for="section in filteredSections" :key="section.key" class="glmw-section">
+        <h3 class="glmw-section-title">
+          {{ section.title }}
+          <span class="glmw-muted">
+            {{ section.rows.length === section.total ? section.total : `${section.rows.length} of ${section.total}` }}
+          </span>
+        </h3>
+
+        <table class="glmw-table">
+          <thead class="glmw-sr-only">
+            <tr>
+              <th scope="col">Metric</th>
+              <th scope="col">Value</th>
+              <th scope="col">Change</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr
+              v-for="row in section.rows.slice(0, limit(section.key))"
+              :key="row.name"
+              :class="`glmw-row-${row.status}`"
+            >
+              <th scope="row" class="glmw-name glmw-mono" :title="`From job ${row.jobName}`">
+                {{ row.name }}
+              </th>
+              <td class="glmw-value glmw-mono">
+                <template v-if="row.status === 'changed'">
+                  <span class="glmw-previous">{{ row.previous }}</span>
+                  <span class="glmw-arrow" aria-label="changed to"> → </span>
+                  <strong>{{ row.value }}</strong>
+                </template>
+                <template v-else-if="row.status === 'removed'">
+                  <del class="glmw-previous">{{ row.previous }}</del>
+                </template>
+                <template v-else>{{ row.value }}</template>
+              </td>
+              <td class="glmw-change">
+                <span v-if="row.status === 'changed' && deltaLabel(row)" :class="deltaClass(row)">
+                  {{ deltaLabel(row) }}
+                </span>
+                <span v-else-if="row.status === 'new'" class="glmw-badge">New</span>
+                <span v-else-if="row.status === 'removed'" class="glmw-badge glmw-badge-muted">
+                  Removed
+                </span>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+
+        <button
+          v-if="section.rows.length > limit(section.key)"
+          type="button"
+          class="glmw-more"
+          @click="showMore(section.key)"
+        >
+          Show more ({{ section.rows.length - limit(section.key) }} left)
+        </button>
+      </div>
+
+      <p v-if="needle && filteredSections.length === 0" class="glmw-empty glmw-muted">
+        No metric matches “{{ query.trim() }}”.
+      </p>
+
+      <p v-if="hiddenUnchanged > 0" class="glmw-empty glmw-muted">
+        {{ plural(hiddenUnchanged, 'unchanged metric') }} not listed — turn on
+        <em>Show unchanged metrics</em> in the extension settings to see them.
+      </p>
+    </div>
+  </section>
+</template>

@@ -1,0 +1,340 @@
+/*
+ * The widget is injected into the page's own DOM rather than a shadow root, so
+ * it can pick up GitLab's theme tokens (`--gl-*`, available on GitLab 17+) and
+ * look native. Every selector is `glmw-` prefixed to keep GitLab's utility CSS
+ * from colliding with it, and the properties GitLab's reset touches (margin,
+ * font, list-style, button appearance) are set explicitly.
+ */
+
+.glmw {
+  --glmw-bg: var(--gl-background-color-section, #fff);
+  --glmw-bg-subtle: var(--gl-background-color-subtle, #fbfafd);
+  --glmw-border: var(--gl-border-color-default, #dcdcde);
+  --glmw-text: var(--gl-text-color-default, #333238);
+  --glmw-text-subtle: var(--gl-text-color-subtle, #737278);
+  --glmw-link: var(--gl-text-color-link, #1068bf);
+  --glmw-accent: var(--gl-feedback-info-icon-color, #1f75cb);
+  --glmw-danger: #ae1800;
+  --glmw-warning: var(--gl-feedback-warning-icon-color, #ab6100);
+  --glmw-badge-bg: #e9f3fc;
+  --glmw-badge-text: #0b5cad;
+
+  box-sizing: border-box;
+  margin: 0 0 12px;
+  border: 1px solid var(--glmw-border);
+  border-radius: 8px;
+  background: var(--glmw-bg);
+  color: var(--glmw-text);
+  font-size: 14px;
+  line-height: 1.5;
+  overflow: hidden;
+}
+
+/*
+ * The host is marked once `fitHost` has established that it is wearing GitLab's
+ * own card class: the border, corners, background and the gap below the card are
+ * all GitLab's then, and a second card drawn inside the first only doubles them
+ * up. Keyed off the host, not a class on the widget, because Vue rewrites the
+ * widget root's `class` attribute whenever its `:class` binding changes.
+ */
+.glmw-hosted .glmw {
+  margin: 0;
+  border: 0;
+  border-radius: inherit;
+  background: none;
+}
+
+.glmw *,
+.glmw *::before,
+.glmw *::after {
+  box-sizing: border-box;
+}
+
+/*
+ * GitLab's dark theme is a class on the root element, not a media query, so it
+ * is matched directly. `prefers-color-scheme` is not used: it would fight the
+ * user's explicit GitLab theme choice.
+ */
+:where(html.gl-dark, body.gl-dark, .gl-dark) .glmw {
+  --glmw-bg: var(--gl-background-color-section, #28272d);
+  --glmw-bg-subtle: var(--gl-background-color-subtle, #1f1e24);
+  --glmw-border: var(--gl-border-color-default, #4c4b50);
+  --glmw-text: var(--gl-text-color-default, #ececef);
+  --glmw-text-subtle: var(--gl-text-color-subtle, #bfbfc3);
+  --glmw-link: var(--gl-text-color-link, #63a6e9);
+  --glmw-accent: var(--gl-feedback-info-icon-color, #63a6e9);
+  --glmw-danger: #ff8577;
+  --glmw-warning: var(--gl-feedback-warning-icon-color, #e9be74);
+  --glmw-badge-bg: #153a5f;
+  --glmw-badge-text: #9dc7f1;
+}
+
+.glmw-tone-warning {
+  --glmw-accent: var(--glmw-warning);
+}
+
+/* Header */
+
+.glmw-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 16px;
+}
+
+.glmw-status {
+  display: flex;
+  flex: none;
+  align-items: center;
+  height: 21px;
+  color: var(--glmw-accent);
+}
+
+.glmw-spin {
+  animation: glmw-spin 1s linear infinite;
+}
+
+@keyframes glmw-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .glmw-spin {
+    animation-duration: 3s;
+  }
+}
+
+.glmw-head-body {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.glmw-summary {
+  margin: 0;
+  font-weight: 600;
+}
+
+.glmw-sub {
+  margin: 2px 0 0;
+  font-size: 12px;
+  color: var(--glmw-text-subtle);
+}
+
+.glmw-muted {
+  color: var(--glmw-text-subtle);
+}
+
+.glmw-danger-text {
+  color: var(--glmw-danger);
+}
+
+.glmw-warning-text {
+  color: var(--glmw-warning);
+}
+
+.glmw-mono {
+  font-family: var(--gl-font-monospace, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
+}
+
+.glmw-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+/* Buttons and links */
+
+.glmw button {
+  font: inherit;
+  color: inherit;
+}
+
+.glmw-toggle,
+.glmw-more {
+  flex: none;
+  box-sizing: border-box;
+  padding: 4px 10px;
+  border: 1px solid var(--glmw-border);
+  border-radius: 4px;
+  background: var(--glmw-bg);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.glmw-toggle:hover,
+.glmw-more:hover {
+  background: var(--glmw-bg-subtle);
+}
+
+.glmw-actions {
+  display: flex;
+  flex: none;
+  gap: 6px;
+}
+
+.glmw-actions .glmw-toggle {
+  display: flex;
+  align-items: center;
+  height: 30px;
+}
+
+.glmw-actions .glmw-refresh {
+  justify-content: center;
+  width: 30px;
+  padding: 0;
+}
+
+.glmw-refresh:disabled {
+  cursor: progress;
+  opacity: 0.6;
+}
+
+.glmw-more {
+  margin: 8px 0 0;
+}
+
+.glmw-link {
+  color: var(--glmw-link);
+  text-decoration: none;
+}
+
+.glmw-link:hover {
+  text-decoration: underline;
+}
+
+.glmw :is(button, a, input):focus-visible {
+  outline: 2px solid var(--glmw-link);
+  outline-offset: 1px;
+}
+
+/* Body */
+
+.glmw-body {
+  padding: 4px 16px 12px;
+  border-top: 1px solid var(--glmw-border);
+  background: var(--glmw-bg-subtle);
+}
+
+.glmw-filter {
+  margin: 8px 0 0;
+}
+
+.glmw-input {
+  width: 100%;
+  max-width: 360px;
+  margin: 0;
+  padding: 4px 8px;
+  border: 1px solid var(--glmw-border);
+  border-radius: 4px;
+  background: var(--glmw-bg);
+  color: var(--glmw-text);
+  font: inherit;
+  font-size: 13px;
+}
+
+.glmw-section {
+  margin: 12px 0 0;
+}
+
+.glmw-section-title {
+  display: flex;
+  gap: 6px;
+  margin: 0 0 4px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.5;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  color: var(--glmw-text);
+}
+
+.glmw-section-title .glmw-muted {
+  font-weight: 400;
+}
+
+.glmw-table {
+  width: 100%;
+  margin: 0;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.glmw-table tr + tr :is(th, td) {
+  border-top: 1px solid var(--glmw-border);
+}
+
+.glmw-table :is(th, td) {
+  padding: 4px 8px 4px 0;
+  border: 0;
+  background: none;
+  text-align: left;
+  vertical-align: baseline;
+}
+
+.glmw-name {
+  width: 50%;
+  font-weight: 400;
+  overflow-wrap: anywhere;
+}
+
+.glmw-value {
+  white-space: nowrap;
+}
+
+.glmw-previous {
+  color: var(--glmw-text-subtle);
+}
+
+.glmw-arrow {
+  color: var(--glmw-text-subtle);
+}
+
+.glmw-change {
+  width: 1%;
+  padding-right: 0;
+  white-space: nowrap;
+  text-align: right;
+  font-size: 12px;
+}
+
+/*
+ * Whether a metric going up is good news depends on the metric — test count or
+ * bundle size — so a change is not coloured as good or bad, only told apart from
+ * no change at all.
+ */
+.glmw-delta-up,
+.glmw-delta-down {
+  font-weight: 600;
+  color: var(--glmw-text);
+}
+
+.glmw-delta-flat {
+  color: var(--glmw-text-subtle);
+}
+
+.glmw-badge {
+  display: inline-block;
+  padding: 0 6px;
+  border-radius: 8px;
+  background: var(--glmw-badge-bg);
+  color: var(--glmw-badge-text);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 16px;
+}
+
+.glmw-badge-muted {
+  background: none;
+  border: 1px solid var(--glmw-border);
+  color: var(--glmw-text-subtle);
+}
+
+.glmw-empty {
+  margin: 10px 0 0;
+  font-size: 12px;
+}
