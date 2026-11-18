@@ -121,6 +121,34 @@
   font-weight: 600;
 }
 
+.glmw-largest {
+  margin: 0 0 0 6px;
+  border: 0;
+  font: inherit;
+  font-weight: 400;
+  font-size: 0.9em;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.glmw-largest:hover {
+  text-decoration: underline;
+}
+
+.glmw-largest:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 1px;
+}
+
+/* Says it is the extreme, not a typical change. */
+.glmw-largest-label {
+  font-size: 0.85em;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  opacity: 0.75;
+}
+
 .glmw-sub {
   margin: 2px 0 0;
   font-size: 12px;

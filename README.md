@@ -70,7 +70,9 @@ lint_warnings       2               New
   GitLab's own widget does, so a non-numeric metric (`status passing`) still shows as changed, just
   without a delta. Increases are tinted blue and decreases orange, stronger the bigger the relative change (under 1%,
   under 5%, under 20%, more). The colours say which way and how far, not good or bad: whether up is
-  better depends on the metric.
+  better depends on the metric. The header shows the largest relative change (**max**) next to the
+  summary, so it is visible while the widget is collapsed; hover it for the metric's name, click it
+  to expand the widget with every change listed biggest first (`is:changed sort:abs-change`).
 - **New** / **Removed** — present on only one side.
 - **Unchanged** — counted in the header, and listed only with **Show unchanged metrics** turned on.
 - **Not compared** — the target branch's report from the same job could not be read (usually an

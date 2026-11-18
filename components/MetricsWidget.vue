@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, reactive, ref, shallowRef, useId, useTemplateRef, watch } from 'vue';
+import { computed, nextTick, reactive, ref, shallowRef, useId, useTemplateRef, watch } from 'vue';
 import {
   changeIntensity,
   formatDelta,
@@ -99,6 +99,23 @@ const summary = computed(() => {
   ].filter(Boolean);
   return `Metrics report: ${parts.join(', ')}`;
 });
+
+/**
+ * The changed metric that moved the most relative to its previous value, for
+ * the head — so the size of the change shows without expanding. Changes from
+ * zero have no ratio and are not ranked.
+ */
+const largestChange = computed(() => {
+  let largest: MetricChange | undefined;
+  for (const row of comparison.value?.changed ?? []) {
+    if (row.ratio === undefined) continue;
+    if (!largest || Math.abs(row.ratio) > Math.abs(largest.ratio!)) largest = row;
+  }
+  return largest;
+});
+
+/** What a click on the largest change puts in the filter box: every change, biggest first. */
+const LARGEST_CHANGE_QUERY = 'is:changed sort:abs-change';
 
 const rateLimitNotice = computed(() =>
   props.rateLimitedUntil
@@ -232,10 +249,18 @@ function deltaLabel(row: Row): string | undefined {
   return row.ratio === undefined ? delta : `${delta} (${formatRatio(row.ratio)})`;
 }
 
-function deltaClass(row: Row): string[] {
+function deltaClass(row: MetricChange): string[] {
   const intensity = changeIntensity(row.delta, row.ratio);
   if (!intensity) return ['glmw-delta-flat'];
   return [row.delta! > 0 ? 'glmw-delta-up' : 'glmw-delta-down', `glmw-delta-${intensity}`];
+}
+
+/** Expands the widget and lists every change, biggest first, under the filter box. */
+async function showLargestChanges(): Promise<void> {
+  query.value = LARGEST_CHANGE_QUERY;
+  collapsed.value = false;
+  await nextTick();
+  searchInput.value?.focus();
 }
 
 const searchInput = useTemplateRef<HTMLInputElement>('searchInput');
@@ -326,7 +351,18 @@ function onKeydown(event: KeyboardEvent): void {
       </span>
 
       <div class="glmw-head-body">
-        <p class="glmw-summary">{{ summary }}</p>
+        <p class="glmw-summary">
+          {{ summary }}
+          <button
+            v-if="largestChange"
+            type="button"
+            class="glmw-largest"
+            :class="deltaClass(largestChange)"
+            :title="`Largest change: ${largestChange.name}\nClick to list every change, biggest first`"
+            @click="showLargestChanges"
+            ><span class="glmw-largest-label">max</span> {{ formatRatio(largestChange.ratio!) }}</button
+          >
+        </p>
 
         <p v-if="errorMessage" class="glmw-sub glmw-danger-text">{{ errorMessage }}</p>
 
@@ -427,7 +463,9 @@ function onKeydown(event: KeyboardEvent): void {
     </div>
 
     <div v-if="result && !collapsed && sections.length + hiddenUnchanged > 0" class="glmw-body">
-      <div v-if="settings.showFilter" class="glmw-filter">
+      <!-- Also shown when a query was set some other way, so a filtered list
+           always says what filters it. -->
+      <div v-if="settings.showFilter || query" class="glmw-filter">
         <input
           ref="searchInput"
           v-model="query"

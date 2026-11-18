@@ -110,6 +110,17 @@ describe('MetricsWidget', () => {
     expect(content).not.toMatch(/test_count/);
   });
 
+  it('shows the largest relative change in the head, collapsed or not', async () => {
+    const head = [report('a 110\nb 50\nc 300\nd 5')];
+    const baseReports = [report('a 100\nb 100\nc 200\nd 0', 'metrics', 6)];
+    for (const startCollapsed of [true, false]) {
+      const html = await render(head, { base: baseReports, settings: { startCollapsed } });
+      // b fell by half, more than c rose; d grew from zero and has no ratio.
+      expect(text(html)).toContain('Metrics report: 4 changed max -50%');
+      expect(html).toContain('title="Largest change: b');
+    }
+  });
+
   it('lists unchanged metrics when asked to', async () => {
     const html = await render([report('test_count 128')], {
       base: [report('test_count 128', 'metrics', 6)],
